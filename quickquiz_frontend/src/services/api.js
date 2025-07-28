@@ -1,5 +1,12 @@
 /**
  * Generic API service for interacting with quiz backend.
+ * 
+ * IMPORTANT for 'failed to fetch' errors:
+ * - Set REACT_APP_BACKEND_URL and REACT_APP_WS_URL in your .env file to the accessible backend location.
+ * - If running in cloud or preview environment, use the full backend URL (not localhost).
+ * - Example: REACT_APP_BACKEND_URL=https://<your-backend-host>/api
+ * - Example: REACT_APP_WS_URL=wss://<your-backend-host>/ws
+ * - See .env.example and README.md for setup.
  */
 
 const baseUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";

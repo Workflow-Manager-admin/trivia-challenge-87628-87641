@@ -8,6 +8,15 @@ This project provides a minimal React template with a clean, modern UI and minim
 - **Modern UI**: Clean, responsive design with KAVIA brand styling
 - **Fast**: Minimal dependencies for quick loading times
 - **Simple**: Easy to understand and modify
+## Backend API Connectivity (IMPORTANT)
+
+To connect the QuickQuiz frontend to the backend API, you must set the correct backend address via environment variables.
+
+1. Copy `.env.example` to `.env` in this folder.
+2. Set `REACT_APP_BACKEND_URL` to the URL where your backend is running (e.g., for local dev: `http://localhost:8000`). If deploying remotely (cloud/preview): set it to the public endpoint of your backend.
+3. Optionally set `REACT_APP_WS_URL` if your websocket uses a different address (usually `ws://[host]/ws`).
+
+If these are NOT set, the app tries to connect to `localhost:8000`, which will fail if the backend is not running locally in the same environment. Always ensure these are set to the accessible backend location.
 
 ## Getting Started
 

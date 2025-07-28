@@ -1,7 +1,9 @@
 /**
  * Authentication API service: Handles login, registration, session management.
- * Note: Backend API endpoint URLs and authentication mechanisms
- * should be updated according to backend integration needs.
+ *
+ * IMPORTANT for 'failed to fetch' errors:
+ * - Set REACT_APP_BACKEND_URL in your .env file to the backend API root.
+ * - See .env.example and README.md in the project root for configuration instructions.
  */
 
 const baseUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
