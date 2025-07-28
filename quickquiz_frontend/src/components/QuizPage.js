@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { fetchQuestions, submitAnswer, startMultiplayer, answerMulti } from "../services/api";
+import { fetchQuestions, submitAnswers, startMultiplayer, answerMulti } from "../services/api";
 
 /**
  * QuizPage component: 
@@ -11,7 +11,7 @@ export default function QuizPage({ ws, connectWebSocket, onFinish }) {
   const { mode, category } = useParams();
   const [questions, setQuestions] = useState([]);
   const [current, setCurrent] = useState(0);
-  const [userAnswers, setUserAnswers] = useState([]);
+  const [userAnswers, setUserAnswers] = useState([]); // stores actual {question_id, answer}
   const [timer, setTimer] = useState(20);
   const [scores, setScores] = useState([]); // for multiplayer
   const [loading, setLoading] = useState(true);
@@ -25,24 +25,42 @@ export default function QuizPage({ ws, connectWebSocket, onFinish }) {
         setLoading(false);
       });
     } else {
-      // Multiplayer:
+      // Multiplayer (updating message shapes needed if backend is changed)
       setLoading(true);
       const wsInst = wsRef.current || connectWebSocket();
       wsRef.current = wsInst;
       wsInst.onopen = () => {
-        wsInst.send(JSON.stringify({ type: "JOIN", category }));
+        // Must now use WebSocket protocol matching backend (backend expects action: "join", data: {category_id})
+        // Get category id
+        fetch("/categories")
+          .then(res => res.json())
+          .then(allCats => {
+            const catObj = allCats.find(c => c.name === category);
+            if (catObj)
+              wsInst.send(JSON.stringify({ action: "join", data: { category_id: catObj.id } }));
+          });
       };
       wsInst.onmessage = (event) => {
         const message = JSON.parse(event.data);
-        if (message.type === "QUESTIONS") {
-          setQuestions(message.questions);
-          setScores(message.scores || []);
+        // backend sends {type: "game_start", questions: [...]}
+        if (message.type === "game_start" && message.questions) {
+          setQuestions(
+            message.questions.map(q => ({
+              id: q.id,
+              text: q.question,
+              options: q.choices,
+              answer: undefined,
+            }))
+          );
+          setScores([]); // no initial scores
           setLoading(false);
         }
-        if (message.type === "SCORES") {
-          setScores(message.scores);
+        if (message.type === "score_update" && message.scores) {
+          setScores(
+            Object.entries(message.scores).map(([username, score]) => ({ username, score }))
+          );
         }
-        if (message.type === "GAME_OVER") {
+        if (message.type === "GAME_OVER" || message.type === "game_end") {
           onFinish(message.results);
         }
       };
@@ -65,35 +83,51 @@ export default function QuizPage({ ws, connectWebSocket, onFinish }) {
     if (answered) return;
     setAnswered(true);
     if (mode === "single") {
-      submitAnswer(questions[current].id, option).then(() => {
-        setUserAnswers(ans => [...ans, option]);
-        goNext();
-      });
+      // Just store the answer; we'll submit all at once at the end.
+      setUserAnswers(ans => [
+        ...ans, { question_id: questions[current].id, answer: option }
+      ]);
+      goNext();
     } else {
-      // Multiplayer: send over WebSocket
-      answerMulti(wsRef.current, questions[current].id, option);
-      setUserAnswers(ans => [...ans, option]);
+      // Multiplayer: send over WebSocket using backend's schema {action:"answer",data:{question_id,answer}}
+      if (wsRef.current) {
+        wsRef.current.send(
+          JSON.stringify({
+            action: "answer",
+            data: { question_id: questions[current].id, answer: option }
+          })
+        );
+      }
+      setUserAnswers(ans => [...ans, { question_id: questions[current].id, answer: option }]);
       goNext();
     }
   };
 
   const handleNoAnswer = () => {
     setAnswered(true);
-    setUserAnswers(ans => [...ans, null]);
+    setUserAnswers(ans => [
+      ...ans, { question_id: questions[current]?.id, answer: "" }
+    ]);
     goNext();
   };
 
   const goNext = () => {
-    setTimeout(() => {
+    setTimeout(async () => {
       setTimer(20);
       setAnswered(false);
       if (current + 1 < questions.length) {
         setCurrent(cur => cur + 1);
       } else {
         if (mode === "single") {
-          onFinish({ answers: userAnswers });
+          // SUBMIT batch of answers for this category
+          try {
+            const results = await submitAnswers(userAnswers, category);
+            onFinish(results);
+          } catch {
+            onFinish({ error: "Failed to submit answers!" });
+          }
         }
-        // multiplayer calls onFinish via ws on GAME_OVER message
+        // Multiplayer: onFinish is called via ws on game_end
       }
     }, 700);
   };

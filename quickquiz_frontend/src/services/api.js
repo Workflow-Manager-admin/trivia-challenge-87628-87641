@@ -2,35 +2,63 @@
  * Generic API service for interacting with quiz backend.
  */
 
-const baseUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000/api";
+const baseUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const wsUrl = process.env.REACT_APP_WS_URL || "ws://localhost:8000/ws";
 
 // PUBLIC_INTERFACE
 // Returns list of quiz categories
 export async function fetchCategories() {
-  const res = await fetch(`${baseUrl}/categories`, { credentials: "include" });
+  // Backend returns [{id, name}], but CategoryPage expects names/strings: map as needed
+  const res = await fetch(`${baseUrl}/categories`);
   if (!res.ok) return [];
-  return res.json();
+  const data = await res.json();
+  return data.map(cat => cat.name); // Return names only for compatibility with CategoryPage
 }
 
 // PUBLIC_INTERFACE
-// Returns list of quiz questions for a given category (if in single-player mode)
-export async function fetchQuestions(category) {
-  const res = await fetch(`${baseUrl}/quiz?category=${encodeURIComponent(category)}`, { credentials: "include" });
+// Returns list of quiz questions for a given category (in single-player mode)
+export async function fetchQuestions(categoryName) {
+  // We need to first get the categories to find the id for the given name!
+  const catsRes = await fetch(`${baseUrl}/categories`);
+  if (!catsRes.ok) return [];
+  const cats = await catsRes.json();
+  const catEntry = cats.find(c => c.name === categoryName);
+  if (!catEntry) return [];
+  const catId = catEntry.id;
+  const res = await fetch(`${baseUrl}/questions?category_id=${catId}`);
   if (!res.ok) return [];
-  return res.json();
+  const data = await res.json();
+  // Remap question structure to {text, options, id, answer}
+  return data.map(q => ({
+    id: q.id,
+    text: q.question,
+    options: q.choices,
+    answer: undefined // Don't expose answer to frontend
+  }));
 }
 
 // PUBLIC_INTERFACE
-// Submits answer for single-player
-export async function submitAnswer(questionId, answer) {
-  await fetch(`${baseUrl}/answer`, {
+// Submits ALL answers (batch) for single-player round; expects [{question_id, answer}], and category_id!
+export async function submitAnswers(answersArr, categoryName) {
+  // answersArr: [{question_id, answer}], categoryName: string
+  // Get category id
+  const catsRes = await fetch(`${baseUrl}/categories`);
+  if (!catsRes.ok) throw new Error("Could not get categories");
+  const cats = await catsRes.json();
+  const catEntry = cats.find(c => c.name === categoryName);
+  if (!catEntry) throw new Error("Invalid category");
+  const category_id = catEntry.id;
+  // Send to /submit endpoint (POST), must be authenticated (Bearer token in header if using OAuth)
+  const token = localStorage.getItem("access_token");
+  const headers = { "Content-Type": "application/json" };
+  if(token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${baseUrl}/submit?category_id=${category_id}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ question_id: questionId, answer })
+    headers,
+    body: JSON.stringify(answersArr)
   });
-  return true;
+  if (!res.ok) throw new Error("Failed to submit quiz answers");
+  return res.json();
 }
 
 // PUBLIC_INTERFACE
